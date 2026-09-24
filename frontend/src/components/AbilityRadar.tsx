@@ -11,9 +11,13 @@ export function AbilityRadar({ data }: Props) {
         <div className="radar-row" key={item.axis}>
           <span>{item.axis}</span>
           <div className="radar-track">
-            <i style={{ width: `${item.value}%` }} />
+            <i style={{ width: `${item.value ?? 0}%` }} />
           </div>
-          <strong>{item.value}</strong>
+          {item.value === null ? (
+            <em className="radar-empty">暂无数据</em>
+          ) : (
+            <strong>{item.value}</strong>
+          )}
         </div>
       ))}
     </div>

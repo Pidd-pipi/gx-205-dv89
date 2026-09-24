@@ -32,6 +32,13 @@ export interface WrongBookItem {
   lastPracticed: string;
 }
 
+export interface SubmitResult {
+  score: number;
+  tier: string;
+  rank_hint: string;
+  analysis: string[];
+}
+
 export interface Dashboard {
   profile: {
     nickname: string;
@@ -45,5 +52,6 @@ export interface Dashboard {
   paper: Question[];
   wrongBook: WrongBookItem[];
   rankings: Ranking[];
-  radar: { axis: string; value: number }[];
+  // value 为 null 表示该题型暂无作答记录，雷达显示“暂无数据”而不是 0
+  radar: { axis: string; value: number | null }[];
 }

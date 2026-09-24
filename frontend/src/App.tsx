@@ -9,7 +9,7 @@ const { Content } = Layout;
 const { Title, Paragraph, Text } = Typography;
 
 function App() {
-  const { dashboard, loading, error, loadDashboard, demoLogin } = useBankStore();
+  const { dashboard, loading, error, loadDashboard, demoLogin, submitExam } = useBankStore();
   const [difficulty, setDifficulty] = useState('中级');
   const [amount, setAmount] = useState(10);
   const [answers, setAnswers] = useState<Record<number, string>>({});
@@ -21,9 +21,9 @@ function App() {
 
   const paper = useMemo(() => dashboard?.paper ?? [], [dashboard]);
 
-  async function submitExam() {
-    const result = await api.submitExam(answers);
-    setReport([`得分 ${result.score}`, result.rank_hint, ...result.analysis]);
+  async function handleSubmit() {
+    const result = await submitExam(answers);
+    setReport([`得分 ${result.score}，当前段位 ${result.tier}`, result.rank_hint, ...result.analysis]);
   }
 
   return (
@@ -84,7 +84,7 @@ function App() {
                         </Card>
                       ))}
                     </Space>
-                    <Button type="primary" className="submit" onClick={submitExam}>提交并生成报告</Button>
+                    <Button type="primary" className="submit" onClick={handleSubmit}>提交并生成报告</Button>
                     {report.length > 0 && <Alert type="success" message="考试报告" description={report.join('；')} showIcon className="block" />}
                   </Card>
                 </Col>

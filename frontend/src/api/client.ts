@@ -1,11 +1,18 @@
-import type { Dashboard } from '@/types/bank';
+import type { Dashboard, SubmitResult } from '@/types/bank';
 
 const API_BASE = '/api';
+
+let authToken = '';
+
+export function setAuthToken(token: string) {
+  authToken = token;
+}
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${API_BASE}${path}`, {
     headers: {
       'Content-Type': 'application/json',
+      ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
       ...(init?.headers ?? {})
     },
     ...init
@@ -26,7 +33,7 @@ export const api = {
       body: JSON.stringify({ difficulty, amount })
     }),
   submitExam: (answers: Record<number, string>) =>
-    request<{ score: number; rank_hint: string; analysis: string[] }>('/exams/submit/', {
+    request<SubmitResult>('/exams/submit/', {
       method: 'POST',
       body: JSON.stringify({ answers })
     }),
