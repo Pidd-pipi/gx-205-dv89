@@ -99,7 +99,7 @@ body {
 
 .radar-row {
   display: grid;
-  grid-template-columns: 86px 1fr 36px;
+  grid-template-columns: 86px 1fr 64px;
   gap: 10px;
   align-items: center;
 }
@@ -115,6 +115,18 @@ body {
   display: block;
   height: 100%;
   background: linear-gradient(90deg, #2f6b57, #d19b45);
+}
+
+.radar-empty {
+  font-size: 12px;
+  font-style: normal;
+  color: #8a9a90;
+  white-space: nowrap;
+}
+
+.category-empty {
+  display: block;
+  padding: 4px 0;
 }
 
 @media (max-width: 760px) {

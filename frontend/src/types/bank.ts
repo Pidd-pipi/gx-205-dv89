@@ -1,7 +1,7 @@
 export interface Category {
   id: number;
   name: string;
-  accuracy: number;
+  accuracy: number | null;
   total: number;
 }
 
@@ -32,6 +32,15 @@ export interface WrongBookItem {
   lastPracticed: string;
 }
 
+export interface SubmitResult {
+  score: number;
+  tier: string | null;
+  tier_event: 'promoted' | 'protected' | 'demoted' | '';
+  recent_rate: number | null;
+  rank_hint: string;
+  analysis: string[];
+}
+
 export interface Dashboard {
   profile: {
     nickname: string;
@@ -45,5 +54,5 @@ export interface Dashboard {
   paper: Question[];
   wrongBook: WrongBookItem[];
   rankings: Ranking[];
-  radar: { axis: string; value: number }[];
+  radar: { axis: string; value: number | null }[];
 }

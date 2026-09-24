@@ -9,21 +9,22 @@ const { Content } = Layout;
 const { Title, Paragraph, Text } = Typography;
 
 function App() {
-  const { dashboard, loading, error, loadDashboard, demoLogin } = useBankStore();
+  const { dashboard, loading, error, init, loadDashboard, demoLogin } = useBankStore();
   const [difficulty, setDifficulty] = useState('中级');
   const [amount, setAmount] = useState(10);
   const [answers, setAnswers] = useState<Record<number, string>>({});
   const [report, setReport] = useState<string[]>([]);
 
   useEffect(() => {
-    loadDashboard();
-  }, [loadDashboard]);
+    init();
+  }, [init]);
 
   const paper = useMemo(() => dashboard?.paper ?? [], [dashboard]);
 
   async function submitExam() {
     const result = await api.submitExam(answers);
     setReport([`得分 ${result.score}`, result.rank_hint, ...result.analysis]);
+    await loadDashboard();
   }
 
   return (
@@ -96,8 +97,15 @@ function App() {
                   <Card title="题型分类题库" className="stacked">
                     {dashboard.categories.map((category) => (
                       <div className="category-row" key={category.id}>
-                        <Text>{category.name}</Text>
-                        <Progress percent={category.accuracy} size="small" />
+                        <Space>
+                          <Text>{category.name}</Text>
+                          <Text type="secondary">累计 {category.total} 题</Text>
+                        </Space>
+                        {category.accuracy === null ? (
+                          <Text type="secondary" className="category-empty">暂无数据</Text>
+                        ) : (
+                          <Progress percent={category.accuracy} size="small" />
+                        )}
                       </div>
                     ))}
                   </Card>

@@ -1,8 +1,10 @@
 from django.contrib.auth import get_user_model
+from django.db import transaction
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
 from rest_framework_simplejwt.tokens import RefreshToken
 
+from bank.models import ExamRecord, TypeStat, UserProgress
 from bank.serializers import GeneratePaperSerializer, SubmitExamSerializer
 
 
@@ -39,24 +41,120 @@ QUESTIONS = [
     },
 ]
 
+# 全部题型与雷达轴的对应关系，顺序即首页展示顺序
+QUESTION_TYPES = ["数字推理", "图形推理", "逻辑判断", "类比推理", "演绎推理"]
+RADAR_AXES = {
+    "数字推理": "数字",
+    "图形推理": "图形",
+    "逻辑判断": "逻辑",
+    "类比推理": "类比",
+    "演绎推理": "演绎",
+}
 
-def build_dashboard() -> dict:
+# 段位由低到高，门槛为最近五套练习总正确率（%）
+TIER_LADDER = ["青铜", "白银", "黄金", "铂金", "钻石", "王者"]
+TIER_THRESHOLDS = {"青铜": 0, "白银": 60, "黄金": 70, "铂金": 80, "钻石": 90, "王者": 95}
+RECENT_PAPER_LIMIT = 5
+
+
+def recent_accuracy(user) -> float | None:
+    """最近五套练习的总正确率（按题数加权），没有记录时返回 None。"""
+    records = ExamRecord.objects.filter(user=user).order_by("-created_at", "-id")[:RECENT_PAPER_LIMIT]
+    total = sum(record.total for record in records)
+    if not total:
+        return None
+    correct = sum(record.correct for record in records)
+    return round(correct / total * 100, 1)
+
+
+def settle_tier(progress: UserProgress) -> tuple[float | None, str]:
+    """按最近五套总正确率结算段位，返回 (总正确率, 事件)。
+
+    事件为 "promoted" / "protected" / "demoted" / ""：
+    - 达到更高段位门槛：当场晋级（可跨级），保护次数重置；
+    - 低于当前段位门槛：先消耗一次保护，保护已用完才下降一段；
+    - 回到门槛之上：保护次数恢复。
+    """
+    rate = recent_accuracy(progress.user)
+    if rate is None:
+        return None, ""
+
+    current = TIER_LADDER.index(progress.tier)
+    qualified = max(
+        index for index, name in enumerate(TIER_LADDER) if rate >= TIER_THRESHOLDS[name]
+    )
+
+    if qualified > current:
+        progress.tier = TIER_LADDER[qualified]
+        progress.shield_available = True
+        progress.save(update_fields=["tier", "shield_available"])
+        return rate, "promoted"
+
+    if rate < TIER_THRESHOLDS[progress.tier]:
+        if progress.shield_available:
+            progress.shield_available = False
+            progress.save(update_fields=["shield_available"])
+            return rate, "protected"
+        progress.tier = TIER_LADDER[current - 1]
+        progress.shield_available = True
+        progress.save(update_fields=["tier", "shield_available"])
+        return rate, "demoted"
+
+    if not progress.shield_available:
+        progress.shield_available = True
+        progress.save(update_fields=["shield_available"])
+    return rate, ""
+
+
+def rank_hint_for(progress: UserProgress | None, rate: float | None, event: str) -> str:
+    if progress is None:
+        return "登录后交卷成绩才会计入学习进度与段位结算。"
+    rate_text = f"{rate:.1f}"
+    if event == "promoted":
+        return f"最近五套总正确率 {rate_text}%，达到门槛，当场晋级【{progress.tier}】！"
+    if event == "protected":
+        return f"最近五套总正确率 {rate_text}%，低于【{progress.tier}】保段线，段位保护已生效，再低于门槛一次将掉段。"
+    if event == "demoted":
+        return f"最近五套总正确率 {rate_text}%，再次低于保段线，段位下降至【{progress.tier}】。"
+    return f"最近五套总正确率 {rate_text}%，当前段位【{progress.tier}】。"
+
+
+def build_dashboard(user) -> dict:
+    stats = {}
+    progress = None
+    if user is not None:
+        stats = {stat.question_type: stat for stat in TypeStat.objects.filter(user=user)}
+        progress, _ = UserProgress.objects.get_or_create(user=user)
+
+    categories = []
+    radar = []
+    total_answered = 0
+    total_correct = 0
+    for index, type_name in enumerate(QUESTION_TYPES, start=1):
+        stat = stats.get(type_name)
+        answered = stat.answered if stat else 0
+        correct = stat.correct if stat else 0
+        # 没有作答记录的题型不计零分，雷达与分类都按暂无数据处理
+        accuracy = round(correct / answered * 100, 1) if answered else None
+        categories.append({"id": index, "name": type_name, "accuracy": accuracy, "total": answered})
+        radar.append({"axis": RADAR_AXES[type_name], "value": accuracy})
+        total_answered += answered
+        total_correct += correct
+
+    correct_rate = round(total_correct / total_answered * 100, 1) if total_answered else 0
+    nickname = user.username if user is not None else "未登录访客"
+    tier = progress.tier if progress else "青铜"
+
     return {
         "profile": {
-            "nickname": "推理训练示例用户",
-            "tier": "铂金",
-            "totalAnswered": 1260,
-            "correctRate": 86.5,
-            "streakDays": 19,
-            "practiceMinutes": 2480,
+            "nickname": nickname,
+            "tier": tier,
+            "totalAnswered": total_answered,
+            "correctRate": correct_rate,
+            "streakDays": 0,
+            "practiceMinutes": 0,
         },
-        "categories": [
-            {"id": 1, "name": "数字推理", "accuracy": 88, "total": 320},
-            {"id": 2, "name": "图形推理", "accuracy": 76, "total": 240},
-            {"id": 3, "name": "逻辑判断", "accuracy": 91, "total": 280},
-            {"id": 4, "name": "类比推理", "accuracy": 84, "total": 210},
-            {"id": 5, "name": "演绎推理", "accuracy": 80, "total": 210},
-        ],
+        "categories": categories,
         "paper": QUESTIONS,
         "wrongBook": [
             {"id": 1, "title": "集合包含关系反推", "type": "演绎推理", "mistakes": 5, "lastPracticed": "05-28"},
@@ -66,16 +164,14 @@ def build_dashboard() -> dict:
         "rankings": [
             {"rank": 1, "name": "ReasonMax", "tier": "王者", "score": 9820, "accuracy": 94.2},
             {"rank": 2, "name": "DeducePro", "tier": "钻石", "score": 8760, "accuracy": 91.7},
-            {"rank": 3, "name": "推理训练示例用户", "tier": "铂金", "score": 7650, "accuracy": 86.5},
+            {"rank": 3, "name": nickname, "tier": tier, "score": total_correct * 10, "accuracy": correct_rate},
         ],
-        "radar": [
-            {"axis": "数字", "value": 88},
-            {"axis": "图形", "value": 76},
-            {"axis": "逻辑", "value": 91},
-            {"axis": "类比", "value": 84},
-            {"axis": "演绎", "value": 80},
-        ],
+        "radar": radar,
     }
+
+
+def current_user(request):
+    return request.user if request.user.is_authenticated else None
 
 
 @api_view(["GET"])
@@ -84,8 +180,8 @@ def health(_request):
 
 
 @api_view(["GET"])
-def dashboard(_request):
-    return Response(build_dashboard())
+def dashboard(request):
+    return Response(build_dashboard(current_user(request)))
 
 
 @api_view(["POST"])
@@ -102,13 +198,38 @@ def submit_exam(request):
     serializer = SubmitExamSerializer(data=request.data)
     serializer.is_valid(raise_exception=True)
     answers = serializer.validated_data.get("answers", {})
+
     correct = sum(1 for question in QUESTIONS if answers.get(str(question["id"])) == question["answer"])
     score = round(correct / len(QUESTIONS) * 100)
+
+    user = current_user(request)
+    progress = None
+    rate = None
+    event = ""
+    if user is not None:
+        with transaction.atomic():
+            for question in QUESTIONS:
+                stat, _ = TypeStat.objects.get_or_create(user=user, question_type=question["type"])
+                stat.answered += 1
+                if answers.get(str(question["id"])) == question["answer"]:
+                    stat.correct += 1
+                stat.save(update_fields=["answered", "correct"])
+            ExamRecord.objects.create(user=user, total=len(QUESTIONS), correct=correct)
+            progress, _ = UserProgress.objects.get_or_create(user=user)
+            rate, event = settle_tier(progress)
+
     return Response(
         {
             "score": score,
-            "rank_hint": "本次表现接近黄金 I，继续强化图形推理可冲击铂金。",
-            "analysis": ["数字推理稳定", "图形旋转规律仍需复盘", "演绎推理建议练习充分必要条件"],
+            "tier": progress.tier if progress else None,
+            "tier_event": event,
+            "recent_rate": rate,
+            "rank_hint": rank_hint_for(progress, rate, event),
+            "analysis": [
+                f"{question['type']}·{question['knowledge']}："
+                f"{'答对' if answers.get(str(question['id'])) == question['answer'] else '答错'}"
+                for question in QUESTIONS
+            ],
         }
     )
 

@@ -33,3 +33,32 @@ class WrongBookEntry(models.Model):
 
     class Meta:
         unique_together = ("user", "question")
+
+
+class TypeStat(models.Model):
+    """按题型累计的答题数与正确数。"""
+
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
+    question_type = models.CharField(max_length=32)
+    answered = models.PositiveIntegerField(default=0)
+    correct = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        unique_together = ("user", "question_type")
+
+
+class ExamRecord(models.Model):
+    """一次交卷的总题数与正确数，用于最近五套练习的段位结算。"""
+
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
+    total = models.PositiveIntegerField()
+    correct = models.PositiveIntegerField()
+    created_at = models.DateTimeField(auto_now_add=True)
+
+
+class UserProgress(models.Model):
+    """账号当前段位与掉段保护状态。"""
+
+    user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
+    tier = models.CharField(max_length=16, default="青铜")
+    shield_available = models.BooleanField(default=True)
